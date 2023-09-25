@@ -385,6 +385,11 @@ Retry:
     HandlePragmaMSStruct();
     return StmtEmpty();
 
+    case tok::annot_pragma_zk_parallel:
+      ProhibitAttributes(CXX11Attrs);
+      ProhibitAttributes(GNUAttrs);
+      return ParsePragmaZkParallel(Stmts, StmtCtx, TrailingElseLoc, CXX11Attrs);
+
   case tok::annot_pragma_align:
     ProhibitAttributes(CXX11Attrs);
     ProhibitAttributes(GNUAttrs);
@@ -2390,6 +2395,45 @@ StmtResult Parser::ParseReturnStatement() {
   if (IsCoreturn)
     return Actions.ActOnCoreturnStmt(getCurScope(), ReturnLoc, R.get());
   return Actions.ActOnReturnStmt(ReturnLoc, R.get(), getCurScope());
+}
+
+StmtResult Parser::ParsePragmaZkParallel(StmtVector &Stmts,
+                                      ParsedStmtContext StmtCtx,
+                                      SourceLocation *TrailingElseLoc,
+                                      ParsedAttributes &Attrs) {
+  printf("ParsePragmaZkParallel\n");
+  // Create temporary attribute list.
+  ParsedAttributes TempAttrs(AttrFactory);
+
+  // Set attribute
+  PragmaLoopHintInfo *Info =
+          static_cast<PragmaLoopHintInfo *>(Tok.getAnnotationValue());
+  IdentifierInfo *PragmaNameInfo = Info->PragmaName.getIdentifierInfo();
+  const auto PragmaNameLoc = IdentifierLoc::create(
+          Actions.Context, Info->PragmaName.getLocation(), PragmaNameInfo);
+  auto Range = Info->PragmaName.getLocation();
+  auto OptionLoc = IdentifierLoc::create(
+          Actions.Context, Info->Option.getLocation(), nullptr);
+
+  ArgsUnion ArgHints[] = {PragmaNameLoc, OptionLoc, nullptr,
+                          ArgsUnion(nullptr)};
+
+  TempAttrs.addNew(PragmaNameLoc->Ident, Range, nullptr, PragmaNameLoc->Loc, ArgHints, 4, ParsedAttr::AS_Pragma);
+  printf("Attribute name = %s\n", PragmaNameInfo->getName().str().c_str());
+
+  // next token
+  ConsumeAnnotationToken();
+
+  // Get the next statement.
+  MaybeParseCXX11Attributes(Attrs);
+
+  ParsedAttributes EmptyDeclSpecAttrs(AttrFactory);
+  StmtResult S = ParseStatementOrDeclarationAfterAttributes(
+          Stmts, StmtCtx, TrailingElseLoc, Attrs, EmptyDeclSpecAttrs);
+
+  Attrs.takeAllFrom(TempAttrs);
+
+  return S;
 }
 
 StmtResult Parser::ParsePragmaLoopHint(StmtVector &Stmts,

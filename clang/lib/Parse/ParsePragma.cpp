@@ -240,6 +240,12 @@ struct PragmaLoopHintHandler : public PragmaHandler {
                     Token &FirstToken) override;
 };
 
+struct PragmaZkParallelHandler : public PragmaHandler {
+    PragmaZkParallelHandler() : PragmaHandler("zk_parallel") {}
+    void HandlePragma(Preprocessor &PP, PragmaIntroducer Introducer,
+                      Token &FirstToken) override;
+};
+
 struct PragmaUnrollHintHandler : public PragmaHandler {
   PragmaUnrollHintHandler(const char *name) : PragmaHandler(name) {}
   void HandlePragma(Preprocessor &PP, PragmaIntroducer Introducer,
@@ -479,6 +485,9 @@ void Parser::initializePragmaHandlers() {
   LoopHintHandler = std::make_unique<PragmaLoopHintHandler>();
   PP.AddPragmaHandler("clang", LoopHintHandler.get());
 
+  ZkParallelHandler = std::make_unique<PragmaZkParallelHandler>();
+  PP.AddPragmaHandler(ZkParallelHandler.get());
+
   UnrollHintHandler = std::make_unique<PragmaUnrollHintHandler>("unroll");
   PP.AddPragmaHandler(UnrollHintHandler.get());
   PP.AddPragmaHandler("GCC", UnrollHintHandler.get());
@@ -612,6 +621,9 @@ void Parser::resetPragmaHandlers() {
 
   PP.RemovePragmaHandler("clang", LoopHintHandler.get());
   LoopHintHandler.reset();
+
+  PP.RemovePragmaHandler(ZkParallelHandler.get());
+  ZkParallelHandler.reset();
 
   PP.RemovePragmaHandler(UnrollHintHandler.get());
   PP.RemovePragmaHandler("GCC", UnrollHintHandler.get());
@@ -3551,6 +3563,34 @@ void PragmaLoopHintHandler::HandlePragma(Preprocessor &PP,
 
   PP.EnterTokenStream(std::move(TokenArray), TokenList.size(),
                       /*DisableMacroExpansion=*/false, /*IsReinject=*/false);
+}
+
+// #pragma zk_parallel
+void PragmaZkParallelHandler::HandlePragma(Preprocessor &PP,
+                                           PragmaIntroducer Introducer,
+                                           Token &Tok) {
+  printf("HandlePragma ZK PARALLEL\n");
+  Token PragmaName = Tok;
+  PP.Lex(Tok);
+
+  auto *Info = new (PP.getPreprocessorAllocator()) PragmaLoopHintInfo;
+  Info->PragmaName = PragmaName;
+  Info->Option.startToken();
+  auto Toks = std::make_unique<Token[]>(1);
+  Toks[0].startToken();
+  Toks[0].setKind(tok::annot_pragma_zk_parallel);
+  Toks[0].setLocation(Introducer.Loc);
+  Toks[0].setAnnotationEndLoc(PragmaName.getLocation());
+  Toks[0].setAnnotationValue(static_cast<void *>(Info));
+
+  if (Tok.isNot(tok::eod)) {
+    printf("Error, extra tokens at the end of pragma zk_parallel\n");
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_extra_tokens_at_eol)
+            << "zk_parallel pragma";
+    return;
+  }
+
+  PP.EnterTokenStream(std::move(Toks), 1, /*DisableMacroExpansion=*/false, /*IsReinject=*/false);
 }
 
 /// Handle the loop unroll optimization pragmas.
