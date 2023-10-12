@@ -385,6 +385,11 @@ Retry:
     HandlePragmaMSStruct();
     return StmtEmpty();
 
+    case tok::annot_pragma_zk_multi_prover:
+      ProhibitAttributes(CXX11Attrs);
+      ProhibitAttributes(GNUAttrs);
+      return ParsePragmaZkMultiProver(Stmts, StmtCtx, TrailingElseLoc, CXX11Attrs);
+
   case tok::annot_pragma_align:
     ProhibitAttributes(CXX11Attrs);
     ProhibitAttributes(GNUAttrs);
@@ -2390,6 +2395,79 @@ StmtResult Parser::ParseReturnStatement() {
   if (IsCoreturn)
     return Actions.ActOnCoreturnStmt(getCurScope(), ReturnLoc, R.get());
   return Actions.ActOnReturnStmt(ReturnLoc, R.get(), getCurScope());
+}
+
+StmtResult Parser::ParsePragmaZkMultiProver(StmtVector &Stmts,
+                                      ParsedStmtContext StmtCtx,
+                                      SourceLocation *TrailingElseLoc,
+                                      ParsedAttributes &Attrs) {
+  // Create temporary attribute list.
+  ParsedAttributes TempAttrs(AttrFactory);
+
+  // Set attribute
+  ZkMultiProveHintInfo *Info =
+          static_cast<ZkMultiProveHintInfo *>(Tok.getAnnotationValue());
+  IdentifierInfo *PragmaNameInfo = Info->PragmaName.getIdentifierInfo();
+  const auto PragmaNameLoc = IdentifierLoc::create(
+          Actions.Context, Info->PragmaName.getLocation(), PragmaNameInfo);
+  auto Range = Info->PragmaName.getLocation();
+
+  // next token
+  ConsumeAnnotationToken();
+
+  llvm::ArrayRef<Token> Toks = Info->Toks;
+  assert(Toks.size() == 1 &&
+         "PragmaZkMultiProver::Toks must contain exactly one token.");
+
+  SmallVector<Token, 1> StringValueList;
+  for (const auto& ProverIdx : Toks) {
+    Expr *ValueExpr = Actions.ActOnNumericConstant(ProverIdx).get();
+    std::optional <llvm::APSInt> ArgVal;
+
+    int Val = 0;
+    if (ArgVal = ValueExpr->getIntegerConstantExpr(Actions.getASTContext())) {
+      Val = ArgVal->getSExtValue();
+    } else {
+      Diag(Info->PragmaName.getLocation(), diag::warn_pragma_expected_integer)
+              << ValueExpr << " is not const int";
+    }
+    const StringRef ValStr = "\"" + std::to_string(Val) + ";\"";
+
+    Token StringLiteralTok;
+    StringLiteralTok.startToken();
+    StringLiteralTok.setKind(tok::string_literal);
+    StringLiteralTok.setLocation(Tok.getLocation());
+    StringLiteralTok.setLiteralData(ValStr.data());
+    StringLiteralTok.setLength(ValStr.size());
+    StringValueList.push_back(StringLiteralTok);
+
+  }
+
+  StringLiteral *SL =
+          cast<StringLiteral>(Actions.ActOnStringLiteral(StringValueList, nullptr).get());
+
+  if (!SL) {
+    SL = StringLiteral::CreateEmpty(
+            Actions.getASTContext(),
+            /* NumConcatenated=*/0,
+            /* Length=*/0,
+            /* CharByteWidth=*/1);
+  }
+
+  ArgsUnion Args[] = {ArgsUnion(SL)};
+
+  TempAttrs.addNew(PragmaNameLoc->Ident, Range, nullptr, PragmaNameLoc->Loc, Args, 1, ParsedAttr::AS_Pragma);
+
+  // Get the next statement.
+  MaybeParseCXX11Attributes(Attrs);
+
+  ParsedAttributes EmptyDeclSpecAttrs(AttrFactory);
+  StmtResult S = ParseStatementOrDeclarationAfterAttributes(
+          Stmts, StmtCtx, TrailingElseLoc, Attrs, EmptyDeclSpecAttrs);
+
+  Attrs.takeAllFrom(TempAttrs);
+
+  return S;
 }
 
 StmtResult Parser::ParsePragmaLoopHint(StmtVector &Stmts,
