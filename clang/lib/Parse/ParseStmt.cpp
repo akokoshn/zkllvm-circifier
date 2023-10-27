@@ -385,10 +385,10 @@ Retry:
     HandlePragmaMSStruct();
     return StmtEmpty();
 
-    case tok::annot_pragma_zk_multi_prover:
-      ProhibitAttributes(CXX11Attrs);
-      ProhibitAttributes(GNUAttrs);
-      return ParsePragmaZkMultiProver(Stmts, StmtCtx, TrailingElseLoc, CXX11Attrs);
+  case tok::annot_pragma_zk_multi_prover:
+    ProhibitAttributes(CXX11Attrs);
+    ProhibitAttributes(GNUAttrs);
+    return ParsePragmaZkMultiProver(Stmts, StmtCtx, TrailingElseLoc, CXX11Attrs);
 
   case tok::annot_pragma_align:
     ProhibitAttributes(CXX11Attrs);
@@ -2443,8 +2443,8 @@ StmtResult Parser::ParsePragmaZkMultiProver(StmtVector &Stmts,
 
   }
 
-  StringLiteral *SL =
-          cast<StringLiteral>(Actions.ActOnStringLiteral(StringValueList, nullptr).get());
+  StringLiteral *SL = nullptr;// =
+          //cast<StringLiteral>(Actions.ActOnStringLiteral(StringValueList, nullptr).get());
 
   if (!SL) {
     SL = StringLiteral::CreateEmpty(
